@@ -20,17 +20,24 @@ type novelData struct {
 }
 
 var baseURL = "https://novel.naver.com/challenge/list?novelId="
+var emailContainer []string
 
 func main() {
-	for i:=0 ; i<50 ; i++{
+	for i:=0 ; i<10000 ; i++{
 		queryURL := baseURL + strconv.Itoa(i)
-		fmt.Println(queryURL, ": ",GetPages(queryURL))
+		resp := GetPages(queryURL)
+		fmt.Println(queryURL, ": ", resp)
+		email := getEmail(resp)
+		if email != "" {
+			emailContainer = append(emailContainer, email)
+		}
 	}
+	fmt.Printf("Found Email : %v\n",len(emailContainer))
 }
 
-func GetPages(url string) (string) {
-	var novelDesc string = ""
-	var writerEmail string = ""
+func GetPages(url string) string {
+	var novelDesc = ""
+	var writerEmail = ""
 	res, err := http.Get(url)
 	checkErr(url, err)
 	checkStatus(url, res.StatusCode)
@@ -53,11 +60,6 @@ func GetPages(url string) (string) {
 		writerEmail = getEmail(novelDesc)
 		fmt.Println(writerEmail)
 	})
-	//doc.Find(".section_area_info").Each(func(i int, s *goquery.Selection) {
-	//	s.Find("p").Each(func(idx int, sel *goquery.Selection) {
-	//		novelDesc = sel.Text()
-	//	})
-	//})
 	return novelDesc
 }
 
@@ -76,6 +78,10 @@ func checkErr(url string, err error) {
 
 func getEmail(text string) string {
 	re := regexp.MustCompile(`[a-z0-9._%+\-\[]+@[a-z0-9.\-]+\.[a-z\]]{2,4}`)
-	match := re.FindString(text)
-	return match
+	is := re.MatchString(text)
+	if is == true {
+		match := re.FindString(text)
+		return match
+	}
+	return ""
 }
