@@ -3,6 +3,7 @@ package main
 import (
 	"errors"
 	"fmt"
+	"github.com/360EntSecGroup-Skylar/excelize"
 	"github.com/PuerkitoBio/goquery"
 	"io"
 	"log"
@@ -11,7 +12,7 @@ import (
 	"strconv"
 )
 
-type novelData struct {
+type novelDataStruct struct {
 	url				string
 	title			string
 	firstPubDate	string
@@ -24,21 +25,66 @@ type novelData struct {
 var baseURL = "https://novel.naver.com/challenge/list?novelId="
 var errNoPage = errors.New("no pages to return")
 var emailContainer []string
+var novelDataList []novelDataStruct
 
 func main() {
-	for i:=0 ; i<100 ; i++{
+	excel := excelize.NewFile()
+	sheet := excel.NewSheet("Sheet1")
+	excel.SetActiveSheet(sheet)
+	defer excel.SaveAs("NovelData.xlsx")
+	excel.SetCellValue("Sheet1", "A1", "URL")
+	excel.SetCellValue("Sheet1", "B1", "제목")
+	excel.SetCellValue("Sheet1", "C1", "최초 작성일")
+	excel.SetCellValue("Sheet1", "D1", "설명")
+	excel.SetCellValue("Sheet1", "E1", "장르")
+	excel.SetCellValue("Sheet1", "F1", "작가 필명")
+	excel.SetCellValue("Sheet1", "G1", "작가 이메일")
+	success := 1
+	for i:=1 ; i<=100 ; i++{
 		queryURL := baseURL + strconv.Itoa(i)
-		pages := GetPages(queryURL)
-		if pages != nil {
-			date := GetPubDate(pages)
-			novelDesc, _ := GetNovelDesc(pages)
-			title := GetNovelTitle(pages)
-			genre := GetGenre(pages)
-			writerNickname := GetWriterNickname(pages)
-			fmt.Printf("%s: %s(%s)[%s] %s. 작가: %s\n", queryURL, title, genre, date, novelDesc, writerNickname)
+		novelData, err := InsertDataToStruct(queryURL)
+
+		if err != nil {
+			continue
 		}
+		urlCell := fmt.Sprintf("A%s", strconv.Itoa(success))
+		titleCell := fmt.Sprintf("B%s", strconv.Itoa(success))
+		pubDateCell := fmt.Sprintf("C%s", strconv.Itoa(success))
+		descCell := fmt.Sprintf("D%s", strconv.Itoa(success))
+		genreCell := fmt.Sprintf("E%s", strconv.Itoa(success))
+		nicknameCell := fmt.Sprintf("F%s", strconv.Itoa(success))
+		emailCell := fmt.Sprintf("G%s", strconv.Itoa(success))
+		excel.SetCellValue("Sheet1", urlCell, novelData.url)
+		excel.SetCellValue("Sheet1", titleCell, novelData.title)
+		excel.SetCellValue("Sheet1", pubDateCell, novelData.firstPubDate)
+		excel.SetCellValue("Sheet1", descCell, novelData.novelDesc)
+		excel.SetCellValue("Sheet1", genreCell, novelData.genre)
+		excel.SetCellValue("Sheet1", nicknameCell, novelData.writerNickname)
+		excel.SetCellValue("Sheet1", emailCell, novelData.writerEmail)
+		success = success + 1
 	}
-	fmt.Printf("Found Email : %v\n",len(emailContainer))
+	fmt.Println(novelDataList)
+}
+
+func InsertDataToStruct(url string) (*novelDataStruct, error) {
+	pages := GetPages(url)
+	if pages != nil {
+		fmt.Printf("Requesting %s : SUCCESS \n", url)
+		desc, email := GetNovelDesc(pages)
+		novelData := novelDataStruct{
+			url: url,
+			title: GetNovelTitle(pages),
+			firstPubDate: GetPubDate(pages),
+			novelDesc: desc,
+			genre: GetGenre(pages),
+			writerNickname: GetWriterNickname(pages),
+			writerEmail: email,
+		}
+		novelDataList = append(novelDataList, novelData)
+		return &novelData, nil
+	}
+	fmt.Printf("Requesting %s : DELETED \n", url)
+	return nil, errNoPage
 }
 
 func GetPages(url string) *goquery.Document {
