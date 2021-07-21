@@ -5,11 +5,11 @@ import (
 	"fmt"
 	"github.com/360EntSecGroup-Skylar/excelize"
 	"github.com/PuerkitoBio/goquery"
-	"io"
 	"log"
 	"net/http"
 	"regexp"
 	"strconv"
+	"time"
 )
 
 type novelDataStruct struct {
@@ -28,6 +28,7 @@ var emailContainer []string
 var novelDataList []novelDataStruct
 
 func main() {
+	c := make(chan novelDataStruct)
 	excel := excelize.NewFile()
 	sheet := excel.NewSheet("Sheet1")
 	excel.SetActiveSheet(sheet)
@@ -40,38 +41,42 @@ func main() {
 	excel.SetCellValue("Sheet1", "F1", "작가 필명")
 	excel.SetCellValue("Sheet1", "G1", "작가 이메일")
 	success := 1
-	for i:=1 ; i<=100 ; i++{
+	for i:=1 ; i<1000000 ; i++ {
 		queryURL := baseURL + strconv.Itoa(i)
-		novelData, err := InsertDataToStruct(queryURL)
+		go InsertDataToStruct(queryURL, c)
+		time.Sleep(time.Microsecond * 6500)
+	}
+	for i:=1 ; i<1000000 ; i++{
+		novelData := <-c
 
-		if err != nil {
-			continue
+		if novelData.url != "" {
+			novelDataList = append(novelDataList, novelData)
+			urlCell := fmt.Sprintf("A%s", strconv.Itoa(success))
+			titleCell := fmt.Sprintf("B%s", strconv.Itoa(success))
+			pubDateCell := fmt.Sprintf("C%s", strconv.Itoa(success))
+			descCell := fmt.Sprintf("D%s", strconv.Itoa(success))
+			genreCell := fmt.Sprintf("E%s", strconv.Itoa(success))
+			nicknameCell := fmt.Sprintf("F%s", strconv.Itoa(success))
+			emailCell := fmt.Sprintf("G%s", strconv.Itoa(success))
+			excel.SetCellValue("Sheet1", urlCell, novelData.url)
+			excel.SetCellValue("Sheet1", titleCell, novelData.title)
+			excel.SetCellValue("Sheet1", pubDateCell, novelData.firstPubDate)
+			excel.SetCellValue("Sheet1", descCell, novelData.novelDesc)
+			excel.SetCellValue("Sheet1", genreCell, novelData.genre)
+			excel.SetCellValue("Sheet1", nicknameCell, novelData.writerNickname)
+			excel.SetCellValue("Sheet1", emailCell, novelData.writerEmail)
+			success = success + 1
 		}
-		urlCell := fmt.Sprintf("A%s", strconv.Itoa(success))
-		titleCell := fmt.Sprintf("B%s", strconv.Itoa(success))
-		pubDateCell := fmt.Sprintf("C%s", strconv.Itoa(success))
-		descCell := fmt.Sprintf("D%s", strconv.Itoa(success))
-		genreCell := fmt.Sprintf("E%s", strconv.Itoa(success))
-		nicknameCell := fmt.Sprintf("F%s", strconv.Itoa(success))
-		emailCell := fmt.Sprintf("G%s", strconv.Itoa(success))
-		excel.SetCellValue("Sheet1", urlCell, novelData.url)
-		excel.SetCellValue("Sheet1", titleCell, novelData.title)
-		excel.SetCellValue("Sheet1", pubDateCell, novelData.firstPubDate)
-		excel.SetCellValue("Sheet1", descCell, novelData.novelDesc)
-		excel.SetCellValue("Sheet1", genreCell, novelData.genre)
-		excel.SetCellValue("Sheet1", nicknameCell, novelData.writerNickname)
-		excel.SetCellValue("Sheet1", emailCell, novelData.writerEmail)
-		success = success + 1
 	}
 	fmt.Println(novelDataList)
 }
 
-func InsertDataToStruct(url string) (*novelDataStruct, error) {
+func InsertDataToStruct(url string, c chan<-novelDataStruct) {
 	pages := GetPages(url)
 	if pages != nil {
-		fmt.Printf("Requesting %s : SUCCESS \n", url)
 		desc, email := GetNovelDesc(pages)
-		novelData := novelDataStruct{
+		fmt.Printf("Requesting %s : SUCCESS \n", url)
+		c <- novelDataStruct{
 			url: url,
 			title: GetNovelTitle(pages),
 			firstPubDate: GetPubDate(pages),
@@ -80,27 +85,21 @@ func InsertDataToStruct(url string) (*novelDataStruct, error) {
 			writerNickname: GetWriterNickname(pages),
 			writerEmail: email,
 		}
-		novelDataList = append(novelDataList, novelData)
-		return &novelData, nil
 	}
 	fmt.Printf("Requesting %s : DELETED \n", url)
-	return nil, errNoPage
+	c <- novelDataStruct{}
 }
 
 func GetPages(url string) *goquery.Document {
 	res, err := http.Get(url)
 	checkErr(url, err)
 	checkStatus(url, res.StatusCode)
-
-	defer func(Body io.ReadCloser) {
-		err := Body.Close()
-		if err != nil {
-			log.Fatal(err)
-		}
-	}(res.Body)
+	res.Header.Add("Connection", "close")
+	defer res.Body.Close()
 
 	doc, err := goquery.NewDocumentFromReader(res.Body)
 	checkErr(url, err)
+
 	if checkResp(doc) == nil {
 		return doc
 	}
@@ -122,7 +121,7 @@ func GetNovelDesc(doc *goquery.Document) (string, string)  {
 		s.Find("p").Each(func(idx int, sel *goquery.Selection) {novelDesc = sel.Text()})
 		writerEmail = getEmail(novelDesc)
 	})
-		return novelDesc, writerEmail
+	return novelDesc, writerEmail
 }
 
 func GetNovelTitle(doc *goquery.Document) string {
